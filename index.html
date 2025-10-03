@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Corazones Matemáticos en Cascada</title>
+    <!-- Incluyendo una fuente agradable (Inter) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Playfair+Display:ital@1&display=swap" rel="stylesheet">
+    <style>
+        /* Estilos generales */
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #000; /* Fondo negro como en el script de turtle */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Inter', sans-serif;
+        }
+
+        /* Contenedor principal para centrar todo */
+        .container {
+            position: relative;
+            width: 95vw;
+            height: 95vh;
+            max-width: 900px;
+            max-height: 900px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background-color: #111; /* Un fondo ligeramente más claro para el contenedor */
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        }
+
+        /* El canvas donde se dibujará */
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            transition: opacity 0.5s ease-in-out;
+        }
+
+        /* Título */
+        #title {
+            position: absolute;
+            top: 20px;
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #fff;
+            text-shadow: 0 0 8px rgba(0, 0, 0, 1);
+            transition: opacity 0.5s ease-in-out;
+        }
+        
+        /* Contenedor para el poema generado por IA */
+        #gemini-output {
+            position: absolute;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            width: 80%;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 1s ease-in-out;
+        }
+
+        #gemini-output.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        #poem {
+            font-family: 'Playfair Display', serif;
+            font-size: 1.5rem;
+            color: #fff;
+            text-align: center;
+            white-space: pre-wrap;
+            margin-bottom: 20px;
+        }
+        
+        .button-container {
+            display: flex;
+            gap: 15px;
+        }
+
+        .gemini-button {
+            background: linear-gradient(145deg, #f81c81, #a341f5);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            padding: 10px 15px;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 4px 15px rgba(248, 28, 129, 0.4);
+        }
+
+        .gemini-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(163, 65, 245, 0.5);
+        }
+        
+        .gemini-button:disabled {
+            background: #555;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+        
+        /* Indicador de carga */
+        #loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #a341f5;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 id="title">Corazones en Cascada</h1>
+        <canvas id="heartCanvas"></canvas>
+        <div id="gemini-output">
+            <div id="loader" style="display: none;"></div>
+            <p id="poem"></p>
+            <div class="button-container">
+                 <button id="speak-button" class="gemini-button" style="display: none;">✨ Escuchar Poema</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- LÓGICA DE JAVASCRIPT ---
+
+        const canvas = document.getElementById('heartCanvas');
+        const ctx = canvas.getContext('2d');
+        const container = document.querySelector('.container');
+        const titleEl = document.getElementById('title');
+        const geminiOutputEl = document.getElementById('gemini-output');
+        const loaderEl = document.getElementById('loader');
+        const poemEl = document.getElementById('poem');
+        const speakButton = document.getElementById('speak-button');
+        
+        let animationFrameId;
+        let currentHeartIndex = 1; 
+        let currentPointIndex = 0; 
+        let geminiFeatureStarted = false;
+
+        const TOTAL_HEARTS = 12;
+        const POINTS_PER_HEART = 100;
+
+        // --- Funciones de la animación del corazón ---
+        function heartEquation(n) {
+            const x = 16 * Math.pow(Math.sin(n), 3);
+            const y = 13 * Math.cos(n) - 5 * Math.cos(2 * n) - 2 * Math.cos(3 * n) - Math.cos(4 * n);
+            return { x, y };
+        }
+
+        function drawFullHeart(size) {
+            ctx.beginPath();
+            ctx.strokeStyle = "red";
+            ctx.lineWidth = 1;
+            for (let n = 0; n <= POINTS_PER_HEART; n += 2) {
+                const angle = n / 10;
+                const { x, y } = heartEquation(angle);
+                const finalX = x * size;
+                const finalY = y * size;
+                if (n === 0) ctx.moveTo(finalX, finalY);
+                else ctx.lineTo(finalX, finalY);
+            }
+            ctx.stroke();
+        }
+
+        function drawCurrentHeart() {
+             if (currentHeartIndex >= TOTAL_HEARTS) return;
+            ctx.beginPath();
+            ctx.strokeStyle = "red";
+            ctx.lineWidth = 1;
+            for (let n = 0; n <= currentPointIndex; n += 2) {
+                const angle = n / 10;
+                const { x, y } = heartEquation(angle);
+                const finalX = x * currentHeartIndex;
+                const finalY = y * currentHeartIndex;
+                if (n === 0) ctx.moveTo(finalX, finalY);
+                else ctx.lineTo(finalX, finalY);
+            }
+            ctx.stroke();
+        }
+
+        function animate() {
+            const dpr = window.devicePixelRatio || 1;
+            const rect = container.getBoundingClientRect();
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            ctx.scale(dpr, dpr);
+            const width = rect.width;
+            const height = rect.height;
+            ctx.clearRect(0, 0, width, height);
+            
+            const scale = Math.min(width, height) / 2 / (16 * TOTAL_HEARTS) * 2;
+            ctx.translate(width / 2, height / 2.2);
+            ctx.scale(scale, -scale); 
+
+            for (let i = 1; i < currentHeartIndex; i++) {
+                drawFullHeart(i);
+            }
+            drawCurrentHeart();
+            
+            currentPointIndex += 2;
+            if (currentPointIndex > POINTS_PER_HEART) {
+                currentPointIndex = 0;
+                currentHeartIndex++;
+            }
+
+            if (currentHeartIndex === TOTAL_HEARTS - 1 && !geminiFeatureStarted) {
+                startGeminiFeature();
+            }
+
+            if (currentHeartIndex < TOTAL_HEARTS) {
+                animationFrameId = requestAnimationFrame(animate);
+            } else {
+                 drawFullHeart(TOTAL_HEARTS - 1);
+            }
+        }
+        
+        // --- Funciones de la API de Gemini ---
+        
+        async function callGeminiWithExponentialBackoff(apiUrl, payload, maxRetries = 5) {
+            let delay = 1000;
+            for (let i = 0; i < maxRetries; i++) {
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    if (response.ok) {
+                        return await response.json();
+                    }
+                } catch (error) {
+                    // Ignorar errores de red y reintentar
+                }
+                await new Promise(resolve => setTimeout(resolve, delay));
+                delay *= 2;
+            }
+            throw new Error('Failed to call Gemini API after multiple retries.');
+        }
+
+
+        async function generatePoem() {
+            poemEl.textContent = '';
+            loaderEl.style.display = 'block';
+            speakButton.style.display = 'none';
+            
+            const apiKey = "";
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+            const payload = {
+                // --- CAMBIO: Prompt mejorado para un poema más cursi y con rima ---
+                contents: [{ parts: [{ text: "Genera un poema de amor de cuatro versos, muy cursi y romántico, con un estilo que recuerde a los poemas de las películas. Debe tener una rima clara y musical (esquema AABB). El poema debe mencionar sus ojos color café, sus lentes, y cómo su mirada es como el primer sorbo de café de la mañana que llena el día de alegría." }] }],
+            };
+
+            try {
+                const result = await callGeminiWithExponentialBackoff(apiUrl, payload);
+                const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (text) {
+                    poemEl.textContent = text.trim();
+                    // --- CORRECCIÓN: La reproducción automática se elimina para evitar errores del navegador.
+                    // El audio ahora solo se reproduce cuando el usuario hace clic en el botón.
+                } else {
+                    poemEl.textContent = "No se pudo generar un poema. Inténtalo de nuevo.";
+                }
+            } catch (error) {
+                 poemEl.textContent = "Error al conectar con la IA. Inténtalo de nuevo más tarde.";
+            } finally {
+                loaderEl.style.display = 'none';
+                speakButton.style.display = 'inline-block';
+            }
+        }
+        
+        async function speakPoem() {
+            const textToSpeak = poemEl.textContent;
+            if (!textToSpeak) return;
+            
+            speakButton.disabled = true;
+            speakButton.textContent = "Hablando...";
+            
+            const apiKey = "";
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
+            const payload = {
+                contents: [{ parts: [{ text: `Di con voz cálida y madura: ${textToSpeak}` }] }],
+                generationConfig: {
+                    responseModalities: ["AUDIO"],
+                    speechConfig: {
+                        voiceConfig: { 
+                            prebuiltVoiceConfig: { voiceName: "Gacrux" } 
+                        }
+                    }
+                },
+            };
+            
+            try {
+                const result = await callGeminiWithExponentialBackoff(apiUrl, payload);
+                const audioData = result?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+                const mimeType = result?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.mimeType;
+
+                if (audioData && mimeType && mimeType.startsWith("audio/")) {
+                    const sampleRateMatch = mimeType.match(/rate=(\d+)/);
+                    const sampleRate = sampleRateMatch ? parseInt(sampleRateMatch[1], 10) : 24000;
+                    const pcmData = base64ToArrayBuffer(audioData);
+                    const pcm16 = new Int16Array(pcmData);
+                    const wavBlob = pcmToWav(pcm16, sampleRate);
+                    const audioUrl = URL.createObjectURL(wavBlob);
+                    new Audio(audioUrl).play();
+                } else {
+                    throw new Error("No se recibió audio válido.");
+                }
+            } catch (error) {
+                 alert("No se pudo generar el audio.");
+            } finally {
+                speakButton.disabled = false;
+                speakButton.textContent = "✨ Escuchar de Nuevo";
+            }
+        }
+        
+        function startGeminiFeature() {
+            if (geminiFeatureStarted) return;
+            geminiFeatureStarted = true;
+
+            titleEl.style.opacity = '0';
+            canvas.style.opacity = '0.2'; // Atenuar el fondo
+            geminiOutputEl.classList.add('visible');
+            generatePoem();
+        }
+
+        // --- Funciones de ayuda para audio ---
+        function base64ToArrayBuffer(base64) {
+            const binaryString = window.atob(base64);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+
+        function pcmToWav(pcmData, sampleRate) {
+            const numChannels = 1;
+            const bitsPerSample = 16;
+            const byteRate = sampleRate * numChannels * bitsPerSample / 8;
+            const blockAlign = numChannels * bitsPerSample / 8;
+            const dataSize = pcmData.length * 2;
+            const buffer = new ArrayBuffer(44 + dataSize);
+            const view = new DataView(buffer);
+
+            function writeString(view, offset, string) {
+                for (let i = 0; i < string.length; i++) {
+                    view.setUint8(offset + i, string.charCodeAt(i));
+                }
+            }
+
+            writeString(view, 0, 'RIFF');
+            view.setUint32(4, 36 + dataSize, true);
+            writeString(view, 8, 'WAVE');
+            writeString(view, 12, 'fmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true);
+            view.setUint16(22, numChannels, true);
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, byteRate, true);
+            view.setUint16(32, blockAlign, true);
+            view.setUint16(34, bitsPerSample, true);
+            writeString(view, 36, 'data');
+            view.setUint32(40, dataSize, true);
+            for (let i = 0; i < pcmData.length; i++) {
+                view.setInt16(44 + i * 2, pcmData[i], true);
+            }
+
+            return new Blob([view], { type: 'audio/wav' });
+        }
+        
+        // --- Inicialización ---
+
+        function setup() {
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            geminiFeatureStarted = false;
+            currentHeartIndex = 1;
+            currentPointIndex = 0;
+            animate();
+        }
+
+        speakButton.addEventListener('click', speakPoem);
+        window.addEventListener('resize', setup);
+        setup();
+    </script>
+</body>
+</html>
